@@ -1,0 +1,1 @@
+{"version":3,"file":"GoogleSTTService.d.ts","sourceRoot":"","sources":["../../src/services/GoogleSTTService.ts"],"names":[],"mappings":"AAMA,qBAAa,gBAAgB;IACzB,OAAO,CAAC,MAAM,CAAkB;;IAOhC;;;;OAIG;IACH,YAAY,CACR,YAAY,EAAE,CAAC,UAAU,EAAE,MAAM,EAAE,OAAO,EAAE,OAAO,KAAK,IAAI,EAC5D,OAAO,EAAE,CAAC,KAAK,EAAE,KAAK,KAAK,IAAI;QA8B3B;;WAEG;iCACsB,MAAM;QAS/B;;WAEG;;;CAOd;;AAED,wBAAsC"}
