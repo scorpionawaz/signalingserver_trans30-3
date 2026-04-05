@@ -59,7 +59,14 @@ const logger = (0, pino_1.default)({
     }
 });
 // Start server
+let isStarting = false; // Add this variable outside the function
 const startServer = async () => {
+    // Add this safety check:
+    if (isStarting) {
+        console.log('[Server] Prevented duplicate server start.');
+        return;
+    }
+    isStarting = true;
     const fastify = (0, fastify_1.default)({
         logger: logger
     });
@@ -713,7 +720,6 @@ const startServer = async () => {
         //         return { error: 'Failed to process audio upload' };
         //     }
         // })
-        // await fastify.listen({ port: config.port, host: '0.0.0.0' });
         const { WebSocketServer } = require('ws');
         const sttWss = new WebSocketServer({ noServer: true });
         sttWss.on('connection', (socket) => {
@@ -723,14 +729,15 @@ const startServer = async () => {
                 try {
                     const msg = JSON.parse(message.toString());
                     if (msg.type === 'start') {
-                        console.log('[STT Proxy Native] Starting new stream session');
+                        const { userId, otherUserId } = msg;
+                        console.log(`[STT Proxy Native] Starting new stream session for ${userId} -> ${otherUserId}`);
                         if (sttStream)
                             sttStream.close();
                         sttStream = GoogleSTTService.createStream((transcript, isFinal) => {
                             socket.send(JSON.stringify({ type: 'transcript', isFinal, text: transcript }));
                         }, (error) => {
                             socket.send(JSON.stringify({ type: 'error', message: error.message }));
-                        });
+                        }, userId, otherUserId);
                     }
                     else if (msg.type === 'audio' && sttStream) {
                         sttStream.writeBlock(msg.data);
@@ -771,20 +778,23 @@ const startServer = async () => {
             transports: ['websocket', 'polling']
         });
         (0, signalingServer_1.setupSocketIOServer)(io);
-        // logger.info(`Call Gateway running on port ${config.port}`);
-        // logger.info(`Socket.IO endpoint: http://localhost:${config.port}`);
-        // logger.info(`Web client: http://localhost:${config.port}`);
-        return fastify;
+        // IMPORTANT: Start listening AFTER attaching WebSockets and Socket.io
+        await fastify.listen({ port: config_1.config.port, host: '0.0.0.0' });
+        logger.info(`Call Gateway running on port ${config_1.config.port}`);
+        logger.info(`Socket.IO endpoint: http://localhost:${config_1.config.port}`);
+        logger.info(`Web client: http://localhost:${config_1.config.port}`);
     }
     catch (err) {
         logger.error(err);
         process.exit(1);
     }
 };
-(async () => {
-    const app = await startServer();
-    module.exports = app;
-})();
+if (require.main === module) {
+    startServer().catch((err) => {
+        logger.error(err);
+        process.exit(1);
+    });
+}
 // Graceful Shutdown for Cloud Run
 const signalHandler = async (signal) => {
     logger.info(`Received ${signal}. Shutting down gracefully...`);

@@ -1,8 +1,12 @@
-declare class WhisperTranscriptionService {
+/**
+ * STTService (formerly WhisperTranscriptionService)
+ *
+ * Buffers audio chunks and uses Google Cloud STT for persistent transcription.
+ * Updated for Cloud Run compatibility by removing local Whisper dependencies.
+ */
+declare class STTService {
     private audioBuffers;
     private tempDir;
-    private whisperBinaryPath;
-    private modelPath;
     private flushIntervalMs;
     private minAudioBytes;
     constructor();
@@ -11,22 +15,14 @@ declare class WhisperTranscriptionService {
      */
     addAudioChunk(callId: string, userId: string, otherUserId: string, audioDataBase64: string): void;
     /**
-     * Flush buffered audio, write WAV, transcribe with Whisper, store result
+     * Flush buffered audio, transcribe with Google STT, store result
      */
     private flushAndTranscribe;
-    /**
-     * Run whisper-cli.exe on a WAV file and return the transcript text
-     */
-    private runWhisper;
-    /**
-     * Write raw PCM data as a WAV file (16kHz, mono, 16-bit LE)
-     */
-    private writePcmToWav;
     /**
      * Stop buffering for a call — flush remaining audio and cleanup
      */
     stopCall(callId: string): Promise<void>;
 }
-declare const _default: WhisperTranscriptionService;
+declare const _default: STTService;
 export default _default;
 //# sourceMappingURL=WhisperTranscriptionService.d.ts.map

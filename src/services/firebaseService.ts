@@ -2,11 +2,28 @@ import admin from 'firebase-admin';
 import path from 'path';
 
 // Initialize Firebase Admin
-const serviceAccount = require('/app/secrets/service-account.json');;
+const fs = require('fs');
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+let serviceAccount;
+const envPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const cloudRunPath = '/app/secrets/service-account.json';
+const localPath = path.join(process.cwd(), 'firebase-service-account.json');
+
+if (envPath && fs.existsSync(envPath)) {
+  serviceAccount = require(path.isAbsolute(envPath) ? envPath : path.join(process.cwd(), envPath));
+} else if (fs.existsSync(cloudRunPath)) {
+  serviceAccount = require(cloudRunPath);
+} else if (fs.existsSync(localPath)) {
+  serviceAccount = require(localPath);
+} else {
+  console.warn('[FCM] No service account file found. Notifications may fail.');
+}
+
+if (serviceAccount) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 
 export async function sendPushNotification(
   fcmToken: string,

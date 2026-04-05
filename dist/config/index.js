@@ -7,7 +7,7 @@ exports.config = void 0;
 const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 exports.config = {
-    port: parseInt(process.env.PORT || '3000'),
+    port: parseInt(process.env.PORT || '3000', 10),
     aiServerUrl: process.env.AI_SERVER_URL || 'http://localhost:8000',
     redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
     logLevel: process.env.LOG_LEVEL || 'info',

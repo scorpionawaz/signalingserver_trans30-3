@@ -839,8 +839,6 @@ const startServer = async () => {
         //     }
         // })
 
-        await fastify.listen({ port: config.port, host: '0.0.0.0' });
-
         
         const { WebSocketServer } = require('ws');
         const sttWss = new WebSocketServer({ noServer: true });
@@ -854,7 +852,8 @@ const startServer = async () => {
                     const msg = JSON.parse(message.toString());
                     
                     if (msg.type === 'start') {
-                        console.log('[STT Proxy Native] Starting new stream session');
+                        const { userId, otherUserId } = msg;
+                        console.log(`[STT Proxy Native] Starting new stream session for ${userId} -> ${otherUserId}`);
                         if (sttStream) sttStream.close();
                         sttStream = GoogleSTTService.createStream(
                             (transcript: string, isFinal: boolean) => {
@@ -862,7 +861,9 @@ const startServer = async () => {
                             },
                             (error: Error) => {
                                 socket.send(JSON.stringify({ type: 'error', message: error.message }));
-                            }
+                            },
+                            userId,
+                            otherUserId
                         );
                     } else if (msg.type === 'audio' && sttStream) {
                         sttStream.writeBlock(msg.data);
@@ -905,6 +906,9 @@ const startServer = async () => {
         });
 
         setupSocketIOServer(io);
+
+        // IMPORTANT: Start listening AFTER attaching WebSockets and Socket.io
+        await fastify.listen({ port: config.port, host: '0.0.0.0' });
 
         logger.info(`Call Gateway running on port ${config.port}`);
         logger.info(`Socket.IO endpoint: http://localhost:${config.port}`);

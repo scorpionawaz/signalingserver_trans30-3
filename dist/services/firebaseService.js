@@ -7,12 +7,30 @@ exports.sendPushNotification = sendPushNotification;
 exports.sendMessageNotification = sendMessageNotification;
 exports.sendUpdateNotification = sendUpdateNotification;
 const firebase_admin_1 = __importDefault(require("firebase-admin"));
+const path_1 = __importDefault(require("path"));
 // Initialize Firebase Admin
-const serviceAccount = require('/app/secrets/service-account.json');
-;
-firebase_admin_1.default.initializeApp({
-    credential: firebase_admin_1.default.credential.cert(serviceAccount),
-});
+const fs = require('fs');
+let serviceAccount;
+const envPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const cloudRunPath = '/app/secrets/service-account.json';
+const localPath = path_1.default.join(process.cwd(), 'firebase-service-account.json');
+if (envPath && fs.existsSync(envPath)) {
+    serviceAccount = require(path_1.default.isAbsolute(envPath) ? envPath : path_1.default.join(process.cwd(), envPath));
+}
+else if (fs.existsSync(cloudRunPath)) {
+    serviceAccount = require(cloudRunPath);
+}
+else if (fs.existsSync(localPath)) {
+    serviceAccount = require(localPath);
+}
+else {
+    console.warn('[FCM] No service account file found. Notifications may fail.');
+}
+if (serviceAccount) {
+    firebase_admin_1.default.initializeApp({
+        credential: firebase_admin_1.default.credential.cert(serviceAccount),
+    });
+}
 async function sendPushNotification(fcmToken, callerId, callerName, callId) {
     // Data-only message - triggers background handler even when app is killed
     // DO NOT include 'notification' field - that prevents background handler from running
