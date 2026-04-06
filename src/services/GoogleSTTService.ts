@@ -62,16 +62,21 @@ export class GoogleSTTService {
                     sampleRateHertz: 16000,
                     languageCode: 'en-IN',
                     alternativeLanguageCodes: ['hi-IN'],
+                    enableAutomaticPunctuation: true,
                     speechContexts: [{
-                        phrases: ["Nimi", "Nirmal", "Nawaz", "Manya", "Shruti", "Shriniwas"],
+                        phrases: ["Nimi", "Nirmal", "Nawaz", "Manya", "Shruti", "Shriniwas", "TIAA", "Gateway"],
                         boost: 20.0
                     }],
                 },
                 interimResults: true,
+                singleUtterance: false,
             })
             .on('error', (err: any) => {
-                logger.error({ error: err }, '[GoogleSTT] Stream Error');
+                logger.error({ error: err.message, code: err.code }, '[GoogleSTT] Stream Error');
                 onError(err);
+            })
+            .on('metadata', (metadata) => {
+                logger.info({ metadata }, '[GoogleSTT] Stream Metadata received');
             })
             .on('data', async (data: any) => {
                 const result = data.results[0];
@@ -86,7 +91,7 @@ export class GoogleSTTService {
                         if (userId && otherUserId && transcript.trim()) {
                             try {
                                 await ConversationService.logCallTranscript(
-                                    userId,
+                                    userId
                                     otherUserId,
                                     transcript.trim(),
                                     Date.now()
@@ -108,7 +113,12 @@ export class GoogleSTTService {
                     const audioBuffer = Buffer.isBuffer(data) 
                         ? data 
                         : Buffer.from(data, 'base64');
-                    recognizeStream.write(audioBuffer);
+                    
+                    if (audioBuffer.length > 0) {
+                        recognizeStream.write(audioBuffer);
+                    } else {
+                        logger.warn('[GoogleSTT] Empty audio buffer, skipping write');
+                    }
                 } catch (e: any) {
                     logger.error({ error: e.message }, '[GoogleSTT] Error writing block to stream');
                 }
