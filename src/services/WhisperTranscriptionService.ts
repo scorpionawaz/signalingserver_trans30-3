@@ -1,165 +1,112 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import pino from 'pino';
 import { config } from '../config';
-import ConversationService from './ConversationService';
 import GoogleSTTService from './GoogleSTTService';
 
 const logger = pino({ level: config.logLevel });
 
-interface AudioBuffer {
+interface AudioStreamSession {
     userId: string;
     otherUserId: string;
-    chunks: Buffer[];
-    timer: NodeJS.Timeout | null;
-    totalBytes: number;
-    lastFlushTime: number;
+    stream: any; // The GoogleSTTStream object returned by createStream
+    lastActivity: number;
 }
 
 /**
  * STTService (formerly WhisperTranscriptionService)
  * 
- * Buffers audio chunks and uses Google Cloud STT for persistent transcription.
- * Updated for Cloud Run compatibility by removing local Whisper dependencies.
+ * Channels audio chunks directly to Google Cloud STT streaming for real-time, 
+ * VAD-based transcription.
  */
 class STTService {
-    private audioBuffers: Map<string, AudioBuffer> = new Map();
-    private tempDir: string;
-    private flushIntervalMs: number = 7000; // Transcribe every 7 seconds
-    private minAudioBytes: number = 32000; // Minimum ~1 second of audio at 16kHz mono 16-bit
+    private sessions: Map<string, AudioStreamSession> = new Map();
 
     constructor() {
-        this.tempDir = path.join(process.cwd(), 'temp_audio');
-
-        // Create temp directory
-        if (!fs.existsSync(this.tempDir)) {
-            fs.mkdirSync(this.tempDir, { recursive: true });
-        }
-
-        logger.info('[STTService] Initialized — Using Google Cloud STT backend');
+        logger.info('[STTService] Initialized — Using Real-time Streaming (VAD) backend');
     }
 
     /**
-     * Add an audio chunk to the buffer for a specific call/user
+     * Add an audio chunk to the active stream for a specific call/user
      */
     addAudioChunk(callId: string, userId: string, otherUserId: string, audioDataBase64: string): void {
-        const bufferKey = `${callId}_${userId}`;
+        const sessionKey = `${callId}_${userId}`;
 
-        if (!this.audioBuffers.has(bufferKey)) {
-            // Create new buffer for this call/user
-            const buffer: AudioBuffer = {
+        if (!this.sessions.has(sessionKey)) {
+            logger.info({ callId, userId, sessionKey }, '[STTService] Creating new streaming session');
+            
+            // Create a new stream for this specific user in the call
+            // The GoogleSTTService handles interim results and final transcription internally.
+            const stream = GoogleSTTService.createStream(
+                (transcript, isFinal) => {
+                    // Interim results can be handled here if UI requires it.
+                    if (isFinal) {
+                        logger.info({ callId, userId, text: transcript }, '[STTService] Utterance finalized');
+                    }
+                },
+                (error) => {
+                    logger.error({ callId, userId, error: error.message }, '[STTService] Stream error');
+                    this.terminateSession(sessionKey);
+                },
+                userId,
+                otherUserId
+            );
+
+            this.sessions.set(sessionKey, {
                 userId,
                 otherUserId,
-                chunks: [],
-                timer: null,
-                totalBytes: 0,
-                lastFlushTime: Date.now(),
-            };
-
-            // Start periodic flush timer
-            buffer.timer = setInterval(() => {
-                this.flushAndTranscribe(bufferKey, callId);
-            }, this.flushIntervalMs);
-
-            this.audioBuffers.set(bufferKey, buffer);
-            logger.info({ callId, userId, bufferKey }, '[STTService] New audio buffer created');
+                stream,
+                lastActivity: Date.now()
+            });
         }
 
-        const buffer = this.audioBuffers.get(bufferKey)!;
+        const session = this.sessions.get(sessionKey)!;
+        session.lastActivity = Date.now();
 
-        // Decode base64 to raw PCM buffer
+        // Debug: Log info about incoming chunk every ~50 chunks to avoid flooding
+        if (Math.random() < 0.02) {
+            const dataType = typeof audioDataBase64;
+            const dataLength = dataType === 'string' ? audioDataBase64.length : (audioDataBase64 as any).length;
+            logger.info({ sessionKey, dataType, dataLength }, '[STTService] Incoming audio chunk info');
+        }
+
+        // Pipe audio data directly to the stream
         try {
-            const pcmData = Buffer.from(audioDataBase64, 'base64');
-            buffer.chunks.push(pcmData);
-            buffer.totalBytes += pcmData.length;
+            session.stream.writeBlock(audioDataBase64);
         } catch (e: any) {
-            logger.error({ error: e.message }, '[STTService] Failed to decode audio chunk');
+            logger.error({ error: e.message, sessionKey }, '[STTService] Failed to write audio to stream');
         }
     }
 
     /**
-     * Flush buffered audio, transcribe with Google STT, store result
+     * Terminate a specific session
      */
-    private async flushAndTranscribe(bufferKey: string, callId: string): Promise<void> {
-        const buffer = this.audioBuffers.get(bufferKey);
-        if (!buffer || buffer.chunks.length === 0) return;
-
-        // Check minimum audio length
-        if (buffer.totalBytes < this.minAudioBytes) {
-            return; // Not enough audio yet
-        }
-
-        // Take all chunks and reset buffer
-        const chunks = buffer.chunks.splice(0);
-        buffer.totalBytes = 0;
-        buffer.lastFlushTime = Date.now();
-
-        // Combine all PCM chunks
-        const pcmData = Buffer.concat(chunks);
-
-        try {
-            logger.info({
-                bufferKey,
-                callId,
-                pcmBytes: pcmData.length,
-                durationSecs: (pcmData.length / (16000 * 2)).toFixed(1),
-            }, '[STTService] Transcribing audio chunk with Google STT');
-
-            // Transcribe using Google STT (Batch mode)
-            const transcript = await GoogleSTTService.recognize(pcmData);
-
-            if (transcript && transcript.trim()) {
-                logger.info({
-                    callId,
-                    userId: buffer.userId,
-                    transcriptPreview: transcript.substring(0, 50) + '...',
-                }, '[STTService] Transcription successful');
-
-                // Store in MongoDB
-                try {
-                    await ConversationService.logCallTranscript(
-                        buffer.userId,
-                        buffer.otherUserId,
-                        `[call:${callId}] ${transcript.trim()}`,
-                        Date.now()
-                    );
-                    logger.info({ callId, userId: buffer.userId }, '[STTService] Transcript persisted to DB');
-                } catch (dbError: any) {
-                    logger.error({ error: dbError.message }, '[STTService] Failed to persist transcript');
-                }
-            } else {
-                logger.debug({ bufferKey }, '[STTService] No speech detected in chunk');
+    private terminateSession(sessionKey: string): void {
+        const session = this.sessions.get(sessionKey);
+        if (session) {
+            try {
+                session.stream.close();
+            } catch (e) {
+                // Ignore close errors
             }
-        } catch (error: any) {
-            logger.error({ error: error.message, bufferKey }, '[STTService] Transcription process failed');
+            this.sessions.delete(sessionKey);
+            logger.info({ sessionKey }, '[STTService] Session closed and cleaned up');
         }
     }
 
     /**
-     * Stop buffering for a call — flush remaining audio and cleanup
+     * Stop buffering for a call — close all active streams
      */
     async stopCall(callId: string): Promise<void> {
         const keysToRemove: string[] = [];
 
-        for (const [key, buffer] of this.audioBuffers) {
+        for (const [key] of this.sessions) {
             if (key.startsWith(callId)) {
-                // Clear timer
-                if (buffer.timer) {
-                    clearInterval(buffer.timer);
-                    buffer.timer = null;
-                }
-
-                // Final flush
-                await this.flushAndTranscribe(key, callId);
-
                 keysToRemove.push(key);
             }
         }
 
-        // Remove buffers
+        // Close and remove sessions
         for (const key of keysToRemove) {
-            this.audioBuffers.delete(key);
-            logger.info({ bufferKey: key }, '[STTService] Buffer cleaned up');
+            this.terminateSession(key);
         }
     }
 }
