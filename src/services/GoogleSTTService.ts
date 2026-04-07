@@ -86,12 +86,12 @@ export class GoogleSTTService {
 
                     if (isFinal) {
                         logger.info({ transcript, userId, otherUserId }, '[GoogleSTT] Final transcript received');
-                        
+
                         // Persist to DB if user IDs are provided
                         if (userId && otherUserId && transcript.trim()) {
                             try {
                                 await ConversationService.logCallTranscript(
-                                    userId
+                                    userId,
                                     otherUserId,
                                     transcript.trim(),
                                     Date.now()
@@ -100,6 +100,11 @@ export class GoogleSTTService {
                             } catch (dbErr: any) {
                                 logger.error({ error: dbErr.message }, '[GoogleSTT] Failed to persist transcript');
                             }
+                        }
+                    } else {
+                        // Log interim results at a lower frequency to avoid flooding
+                        if (Math.random() < 0.05) {
+                            logger.info({ transcript, userId }, '[GoogleSTT] Interim transcript received (isFinal: false)');
                         }
                     }
 
@@ -110,10 +115,9 @@ export class GoogleSTTService {
         return {
             writeBlock: (data: string | Buffer) => {
                 try {
-                    const audioBuffer = Buffer.isBuffer(data) 
-                        ? data 
+                    const audioBuffer = Buffer.isBuffer(data)
+                        ? data
                         : Buffer.from(data, 'base64');
-                    
                     if (audioBuffer.length > 0) {
                         recognizeStream.write(audioBuffer);
                     } else {
