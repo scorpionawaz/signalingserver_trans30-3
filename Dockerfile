@@ -25,6 +25,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# Install ffmpeg for AudioMixingService
+RUN apk add --no-cache ffmpeg
+
+
+
 # Copy ONLY production node_modules from builder
 COPY --from=builder /app/node_modules ./node_modules
 

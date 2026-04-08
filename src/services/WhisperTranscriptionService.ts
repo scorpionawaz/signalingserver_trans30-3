@@ -1,8 +1,13 @@
+import fs from 'fs';
+import path from 'path';
 import pino from 'pino';
 import { config } from '../config';
 import GoogleSTTService from './GoogleSTTService';
 
+
 const logger = pino({ level: config.logLevel });
+const RECORDINGS_DIR = path.join(process.cwd(), 'recordings');
+
 
 interface AudioStreamSession {
     userId: string;
@@ -23,7 +28,14 @@ class STTService {
 
     constructor() {
         logger.info('[STTService] Initialized — Using Real-time Streaming (VAD) backend');
+
+        // Ensure recordings directory exists
+        if (!fs.existsSync(RECORDINGS_DIR)) {
+            fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+            logger.info({ path: RECORDINGS_DIR }, '[STTService] Created recordings directory');
+        }
     }
+
 
     /**
      * Add an audio chunk to the active stream for a specific call/user
@@ -78,9 +90,18 @@ class STTService {
         // Pipe audio data directly to the stream
         try {
             session.stream.writeBlock(audioDataBase64);
+
+            // Save raw PCM segments to disk for final mixing
+            const audioBuffer = Buffer.from(audioDataBase64, 'base64');
+            const pcmFilePath = path.join(RECORDINGS_DIR, `call_${callId}_${userId}.pcm`);
+
+            // Append binary data to the user-specific file
+            fs.appendFileSync(pcmFilePath, audioBuffer);
+
         } catch (e: any) {
-            logger.error({ error: e.message, sessionKey }, '[STTService] Failed to write audio to stream');
+            logger.error({ error: e.message, sessionKey }, '[STTService] Failed to write audio to stream or disk');
         }
+
     }
 
     /**
