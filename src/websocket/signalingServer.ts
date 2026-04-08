@@ -13,6 +13,7 @@ import PermissionService from '../services/PermissionService';
 import UpdatesService from '../services/UpdatesService';
 import ConversationService from '../services/ConversationService';
 import WhisperTranscriptionService from '../services/WhisperTranscriptionService';
+import AudioMixingService from '../services/AudioMixingService';
 
 const logger = pino({ level: config.logLevel });
 
@@ -413,9 +414,10 @@ export function setupSocketIOServer(io: SocketIOServer): void {
                         console.log(JSON.stringify(transcriptPayload, null, 2));
                         console.log("=================================================================\n");
 
+                        /*
                         const sumRoute = `${config.aiServerUrl}/process-conversation`;
                         logger.info({ sumRoute, transcriptCount: conversation.length }, 'Sending conversation array to summarization route');
-
+                        
                         try {
                             const response = await fetch(sumRoute, {
                                 method: 'POST',
@@ -432,12 +434,20 @@ export function setupSocketIOServer(io: SocketIOServer): void {
                         } catch (fetchErr: any) {
                             logger.error({ error: fetchErr.message, sumRoute }, 'Failed to fetch summarization route');
                         }
+                        */
                     } else {
                         logger.warn({ callId }, '[DEBUG-CALL-END] Conversation was empty, skipping summarization');
                     }
                 })
                 .catch(err => {
                     logger.error({ error: err.message, callId }, 'Failed to stop whisper or send summarization');
+                });
+
+            // Trigger P2P Audio Mixing and AI Analysis Upload
+            logger.info({ callId, from, to }, 'Triggering P2P audio mixing and upload to AI analyzer');
+            AudioMixingService.mixAndUpload(callId, from, to)
+                .catch(err => {
+                    logger.error({ error: err.message, callId }, 'Post-call audio mixing and upload failed');
                 });
         });
 
