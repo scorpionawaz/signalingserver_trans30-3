@@ -108,4 +108,7 @@ class AudioMixingService {
     }
 }
 
-export default new AudioMixingService();
+export const audioMixingService = new AudioMixingService();
+export default audioMixingService;
+
+

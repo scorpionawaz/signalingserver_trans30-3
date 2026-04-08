@@ -8,12 +8,14 @@ import { CallSession, WebSocketMessage } from '../models/types';
 import pino from 'pino';
 import { config } from '../config';
 import { sendPushNotification } from '../services/firebaseService';
-import PermissionService from '../services/PermissionService';
+import { 
+    PermissionService, 
+    UpdatesService, 
+    ConversationService, 
+    WhisperTranscriptionService, 
+    AudioMixingService 
+} from '../services';
 
-import UpdatesService from '../services/UpdatesService';
-import ConversationService from '../services/ConversationService';
-import WhisperTranscriptionService from '../services/WhisperTranscriptionService';
-import AudioMixingService from '../services/AudioMixingService';
 
 const logger = pino({ level: config.logLevel });
 
